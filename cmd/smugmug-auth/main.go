@@ -37,16 +37,53 @@ func main() {
 	}
 	params["oauth_signature"] = generateSignature("POST", requestTokenurl, params, consumerSecret, "")
 
-	respValues, err := makeOauthRequest("POST", requestTokenurl, params)
+	tempAccessTokenResp, err := makeOauthRequest("POST", requestTokenurl, params)
 	if err != nil {
 		fmt.Println("error occurred during oauth request ", err)
 		return
 	}
-	oauthToken := respValues.Get("oauth_token")
-	oauthSecret := respValues.Get("oauth_token_secret")
+	tempOauthToken := tempAccessTokenResp.Get("oauth_token")
+	tempOauthSecret := tempAccessTokenResp.Get("oauth_token_secret")
+	if tempOauthToken == "" || tempOauthSecret == "" {
+		fmt.Println("temporary oauthToken and or oauthSecret could not be retrieved!")
+		fmt.Println("response values: ", tempAccessTokenResp)
+		return
+	}
+	fmt.Println("oauth_token: ", tempOauthToken)
+	fmt.Println("oauth_secret: ", tempOauthSecret)
+
+	// Step 2: Authorize in the Browser
+	authUrl := fmt.Sprintf("https://api.smugmug.com/services/oauth/1.0a/authorize?oauth_token=%s", tempOauthToken)
+	fmt.Println("Open your browser and authorize smug-mug-backupper to have access to your galleries at following link:")
+	fmt.Println(authUrl)
+
+	var pin string
+	fmt.Printf("\nEnter 6-digit PIN here: ")
+	fmt.Scanln(&pin)
+	pin = strings.TrimSpace(pin)
+
+	// Step 3
+	accessTokenUrl := "https://api.smugmug.com/services/oauth/1.0a/getAccessToken"
+	accessTokenParams := map[string]string{
+		"oauth_consumer_key":     consumerKey,
+		"oauth_nonce":            generateNonce(),
+		"oauth_signature_method": "HMAC-SHA1",
+		"oauth_timestamp":        fmt.Sprintf("%d", time.Now().Unix()),
+		"oauth_token":            tempOauthToken,
+		"oauth_verifier":         pin,
+		"oauth_version":          "1.0",
+	}
+	accessTokenParams["oauth_signature"] = generateSignature("POST", accessTokenUrl, accessTokenParams, consumerSecret, tempOauthSecret)
+	accessTokenResp, err := makeOauthRequest("POST", requestTokenurl, params)
+	if err != nil {
+		fmt.Println("error occurred during oauth request ", err)
+		return
+	}
+	oauthToken := accessTokenResp.Get("oauth_token")
+	oauthSecret := accessTokenResp.Get("oauth_token_secret")
 	if oauthToken == "" || oauthSecret == "" {
 		fmt.Println("oauthToken and or oauthSecret could not be retrieved!")
-		fmt.Println("response values: ", respValues)
+		fmt.Println("response values: ", accessTokenResp)
 		return
 	}
 	fmt.Println("oauth_token: ", oauthToken)

@@ -1,3 +1,3 @@
-module github.com/lukasnoeller/smug-mug-backupper
+module github.com/lukasnoeller/smugmug-backupper
 
 go 1.24.0
