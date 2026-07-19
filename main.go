@@ -1,14 +1,18 @@
 package main
 
 import (
+	"crypto/hmac"
+	"crypto/sha1"
+	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -22,19 +26,31 @@ func main() {
 	}
 	// Step 1: Get temporary request token
 	fmt.Println("Connecting to smug  mug to receive temporary request token...")
-	requestTokenurl := "https://api.smugmug.com/services/oath/1.0a/getRequestToken"
-	resp, err := http.Get(url)
+	requestTokenurl := "https://api.smugmug.com/services/oauth/1.0a/getRequestToken"
+	params := map[string]string{
+		"oauth_callback":         "oob",
+		"oauth_consumer_key":     consumerKey,
+		"oauth_nonce":            generateNonce(),
+		"oauth_signature_method": "HMAC-SHA1",
+		"oauth_timestamp":        fmt.Sprintf("%d", time.Now().Unix()),
+		"oauth_version":          "1.0",
+	}
+	params["oauth_signature"] = generateSignature("POST", requestTokenurl, params, consumerSecret, "")
+
+	respValues, err := makeOauthRequest("POST", requestTokenurl, params)
 	if err != nil {
-		log.Println("error ocurred during HTTP request: ", err)
+		fmt.Println("error occurred during oauth request ", err)
 		return
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Println("error while reading body: ", err)
+	oauthToken := respValues.Get("oauth_token")
+	oauthSecret := respValues.Get("oauth_token_secret")
+	if oauthToken == "" || oauthSecret == "" {
+		fmt.Println("oauthToken and or oauthSecret could not be retrieved!")
+		fmt.Println("response values: ", respValues)
 		return
 	}
-	fmt.Println(string(body))
+	fmt.Println("oauth_token: ", oauthToken)
+	fmt.Println("oauth_secret: ", oauthSecret)
 
 }
 
@@ -48,6 +64,31 @@ func generateNonce() string {
 	return string(b)
 }
 
+func generateSignature(method, targetUrl string, params map[string]string, consumerSecret, tokenSecret string) string {
+
+	var keys []string
+	for k := range params {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var paramParts []string
+	for _, k := range keys {
+		part := url.QueryEscape(k) + "=" + url.QueryEscape(params[k])
+		paramParts = append(paramParts, part)
+	}
+	paramString := strings.Join(paramParts, "&")
+	signatureBaseString := url.QueryEscape(method) + "&" +
+		url.QueryEscape(targetUrl) + "&" +
+		url.QueryEscape(paramString)
+
+	signingKey := url.QueryEscape(consumerSecret) + "&" + url.QueryEscape(tokenSecret)
+
+	mac := hmac.New(sha1.New, []byte(signingKey))
+	mac.Write([]byte(signatureBaseString))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+
+}
+
 func makeOauthRequest(method, targetUrl string, params map[string]string) (url.Values, error) {
 	var authParts []string
 	for k, v := range params {
@@ -56,6 +97,7 @@ func makeOauthRequest(method, targetUrl string, params map[string]string) (url.V
 	authHeader := "Oauth " + strings.Join(authParts, ", ")
 	req, err := http.NewRequest(method, targetUrl, nil)
 	if err != nil {
+		println("error occurred during intialization request object")
 		return nil, err
 	}
 	req.Header.Set("Authorization", authHeader)
@@ -64,14 +106,21 @@ func makeOauthRequest(method, targetUrl string, params map[string]string) (url.V
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
+		println("error occurred during oauth request")
 		return nil, err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		println("error occurred during read of response body")
 		return nil, err
 	}
-	values , err := 
-
+	values, err := url.ParseQuery(string(body))
+	if err != nil {
+		println("error occurred during parsing of query")
+		println("body: ", string(body))
+		return nil, err
+	}
+	return values, nil
 }
