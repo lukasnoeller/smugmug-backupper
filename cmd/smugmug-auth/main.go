@@ -65,7 +65,7 @@ func main() {
 		"oauth_version":          "1.0",
 	}
 	accessTokenParams["oauth_signature"] = auth.CalculateSignature("POST", accessTokenUrl, accessTokenParams, credentials["SMUGMUG_API_SECRET"], tempOauthSecret)
-	accessTokenResp, err := auth.MakeOauthRequest("POST", requestTokenurl, params)
+	accessTokenResp, err := auth.MakeOauthRequest("POST", accessTokenUrl, accessTokenParams)
 	if err != nil {
 		fmt.Println("error occurred during oauth request ", err)
 		return
@@ -73,12 +73,16 @@ func main() {
 	outputCredentials := make(map[string]string)
 	outputCredentials["SMUGMUG_ACCESS_TOKEN"] = accessTokenResp.Get("oauth_token")
 	outputCredentials["SMUGMUG_ACCESS_TOKEN_SECRET"] = accessTokenResp.Get("oauth_token_secret")
-	auth.SetCredentials(j)
+	auth.SetCredentials(outputCredentials)
 	if outputCredentials["SMUGMUG_ACCESS_TOKEN"] == "" || outputCredentials["SMUGMUG_ACCESS_TOKEN_SECRET"] == "" {
 		fmt.Println("oauthToken and or oauthSecret could not be retrieved!")
 		fmt.Println("response values: ", accessTokenResp)
 		return
 	}
 	fmt.Println("smugmug access token and secret values generated and set to environment")
+
+	for k, v := range outputCredentials {
+		fmt.Printf("%s=%s\n", k, v)
+	}
 
 }
