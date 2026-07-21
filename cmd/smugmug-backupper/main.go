@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net/http"
-	"os"
 
 	"github.com/dghubble/oauth1"
 	"github.com/lukasnoeller/smugmug-backupper/internal/auth"
@@ -20,14 +20,20 @@ func main() {
 
 	config := oauth1.NewConfig(credentials["SMUGMUG_API_KEY"], credentials["SMUGMUG_API_SECRET"])
 	token := oauth1.NewToken(credentials["SMUGMUG_ACCESS_TOKEN"], credentials["SMUGMUG_ACCESS_TOKEN_SECRET"])
-	method := "GET"
-	targetUrl := "https://api.smugmug.com/api/v2/folder"
-	req, err := http.NewRequest(method, targetUrl, nil)
+	httpClient := config.Client(oauth1.NoContext, token)
+	req, err := http.NewRequest("GET", "https://api.smugmug.com/api/v2/folder/user/utanoller", nil)
 	if err != nil {
-		println("error occurred during intialization request object")
-		return nil, err
+		fmt.Println("error ocurred during request generation: ", err)
 	}
-	client := &http.Client{}
-	resp, err := client.Do(req)
 
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		fmt.Println("error ocurred during http request: ", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	fmt.Printf("Response: %s\n", body)
 }
