@@ -1,27 +1,18 @@
 package main
 
 import (
-	"crypto/hmac"
-	"crypto/sha1"
-	"encoding/base64"
 	"fmt"
-	"io"
-	"math/rand"
-	"net/http"
-	"net/url"
-	"os"
-	"sort"
 	"strings"
 	"time"
+
+	"github.com/lukasnoeller/smugmug-backupper/internal/auth"
 )
 
 func main() {
 	// Get api key and secret
-	consumerKey := os.Getenv("SMUGMUG_API_KEY")
-	consumerSecret := os.Getenv("SMUGMUG_API_SECRET")
-	if consumerKey == "" || consumerSecret == "" {
-		fmt.Println("Error: missing env variable values..")
-		fmt.Println("SMUGMUG_API_KEY and/or SMUGMUG_API_SECRET missing")
+	credentials, err := auth.GetCredentials("SMUGMUG_API_KEY", "SMUGMUG_API_SECRET")
+	if err != nil {
+		fmt.Println("Error ocurred during retrieval of credentials: ", err)
 		return
 	}
 	// Step 1: Get temporary request token
@@ -29,15 +20,15 @@ func main() {
 	requestTokenurl := "https://api.smugmug.com/services/oauth/1.0a/getRequestToken"
 	params := map[string]string{
 		"oauth_callback":         "oob",
-		"oauth_consumer_key":     consumerKey,
-		"oauth_nonce":            generateNonce(),
+		"oauth_consumer_key":     credentials["SMUGMUG_API_KEY"],
+		"oauth_nonce":            auth.GenerateNonce(),
 		"oauth_signature_method": "HMAC-SHA1",
 		"oauth_timestamp":        fmt.Sprintf("%d", time.Now().Unix()),
 		"oauth_version":          "1.0",
 	}
-	params["oauth_signature"] = generateSignature("POST", requestTokenurl, params, consumerSecret, "")
+	params["oauth_signature"] = auth.CalculateSignature("POST", requestTokenurl, params, credentials["SMUGMUG_API_SECRET"], "")
 
-	tempAccessTokenResp, err := makeOauthRequest("POST", requestTokenurl, params)
+	tempAccessTokenResp, err := auth.MakeOauthRequest("POST", requestTokenurl, params)
 	if err != nil {
 		fmt.Println("error occurred during oauth request ", err)
 		return
@@ -65,99 +56,29 @@ func main() {
 	// Step 3
 	accessTokenUrl := "https://api.smugmug.com/services/oauth/1.0a/getAccessToken"
 	accessTokenParams := map[string]string{
-		"oauth_consumer_key":     consumerKey,
-		"oauth_nonce":            generateNonce(),
+		"oauth_consumer_key":     credentials["SMUGMUG_API_KEY"],
+		"oauth_nonce":            auth.GenerateNonce(),
 		"oauth_signature_method": "HMAC-SHA1",
 		"oauth_timestamp":        fmt.Sprintf("%d", time.Now().Unix()),
 		"oauth_token":            tempOauthToken,
 		"oauth_verifier":         pin,
 		"oauth_version":          "1.0",
 	}
-	accessTokenParams["oauth_signature"] = generateSignature("POST", accessTokenUrl, accessTokenParams, consumerSecret, tempOauthSecret)
-	accessTokenResp, err := makeOauthRequest("POST", requestTokenurl, params)
+	accessTokenParams["oauth_signature"] = auth.CalculateSignature("POST", accessTokenUrl, accessTokenParams, credentials["SMUGMUG_API_SECRET"], tempOauthSecret)
+	accessTokenResp, err := auth.MakeOauthRequest("POST", requestTokenurl, params)
 	if err != nil {
 		fmt.Println("error occurred during oauth request ", err)
 		return
 	}
-	oauthToken := accessTokenResp.Get("oauth_token")
-	oauthSecret := accessTokenResp.Get("oauth_token_secret")
-	if oauthToken == "" || oauthSecret == "" {
+	outputCredentials := make(map[string]string)
+	outputCredentials["SMUGMUG_ACCESS_TOKEN"] = accessTokenResp.Get("oauth_token")
+	outputCredentials["SMUGMUG_ACCESS_TOKEN_SECRET"] = accessTokenResp.Get("oauth_token_secret")
+	auth.SetCredentials(j)
+	if outputCredentials["SMUGMUG_ACCESS_TOKEN"] == "" || outputCredentials["SMUGMUG_ACCESS_TOKEN_SECRET"] == "" {
 		fmt.Println("oauthToken and or oauthSecret could not be retrieved!")
 		fmt.Println("response values: ", accessTokenResp)
 		return
 	}
-	fmt.Println("oauth_token: ", oauthToken)
-	fmt.Println("oauth_secret: ", oauthSecret)
+	fmt.Println("smugmug access token and secret values generated and set to environment")
 
-}
-
-func generateNonce() string {
-	// generates a number used once
-	const charset = "absdefhhijklmnoprstuvwxyzABCDEDFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, 32)
-	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
-	}
-	return string(b)
-}
-
-func generateSignature(method, targetUrl string, params map[string]string, consumerSecret, tokenSecret string) string {
-
-	var keys []string
-	for k := range params {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	var paramParts []string
-	for _, k := range keys {
-		part := url.QueryEscape(k) + "=" + url.QueryEscape(params[k])
-		paramParts = append(paramParts, part)
-	}
-	paramString := strings.Join(paramParts, "&")
-	signatureBaseString := url.QueryEscape(method) + "&" +
-		url.QueryEscape(targetUrl) + "&" +
-		url.QueryEscape(paramString)
-
-	signingKey := url.QueryEscape(consumerSecret) + "&" + url.QueryEscape(tokenSecret)
-
-	mac := hmac.New(sha1.New, []byte(signingKey))
-	mac.Write([]byte(signatureBaseString))
-	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
-
-}
-
-func makeOauthRequest(method, targetUrl string, params map[string]string) (url.Values, error) {
-	var authParts []string
-	for k, v := range params {
-		authParts = append(authParts, fmt.Sprintf("%s=%s", k, url.QueryEscape(v)))
-	}
-	authHeader := "Oauth " + strings.Join(authParts, ", ")
-	req, err := http.NewRequest(method, targetUrl, nil)
-	if err != nil {
-		println("error occurred during intialization request object")
-		return nil, err
-	}
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Content-Length", "0")
-
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		println("error occurred during oauth request")
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		println("error occurred during read of response body")
-		return nil, err
-	}
-	values, err := url.ParseQuery(string(body))
-	if err != nil {
-		println("error occurred during parsing of query")
-		println("body: ", string(body))
-		return nil, err
-	}
-	return values, nil
 }
