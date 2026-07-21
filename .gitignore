@@ -1,4 +1,4 @@
 .env
 AGENTS.md
-smugmug-backupper
-smugmug-auth
+/smugmug-backupper
+/smugmug-auth
