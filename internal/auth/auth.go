@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"fmt"
+	"github.com/dghubble/oauth1"
 	"io"
 	"math/rand"
 	"net/http"
@@ -99,4 +100,33 @@ func MakeOauthRequest(method, targetUrl string, params map[string]string) (url.V
 		return nil, err
 	}
 	return values, nil
+}
+
+func AuthenticatedRequest(method, RequestUrl string) ([]byte, error) {
+
+	// Get credentials
+	credentials, err := GetCredentials("SMUGMUG_API_KEY", "SMUGMUG_API_SECRET", "SMUGMUG_ACCESS_TOKEN", "SMUGMUG_ACCESS_TOKEN_SECRET")
+	if err != nil {
+		fmt.Println("Error ocurred during retrieval of credentials: ", err)
+		return nil, err
+	}
+
+	config := oauth1.NewConfig(credentials["SMUGMUG_API_KEY"], credentials["SMUGMUG_API_SECRET"])
+	token := oauth1.NewToken(credentials["SMUGMUG_ACCESS_TOKEN"], credentials["SMUGMUG_ACCESS_TOKEN_SECRET"])
+	httpClient := config.Client(oauth1.NoContext, token)
+	req, err := http.NewRequest(method, RequestUrl, nil)
+	if err != nil {
+		fmt.Println("error ocurred during request generation: ", err)
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		fmt.Println("error ocurred during http request: ", err)
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	return body, nil
 }
