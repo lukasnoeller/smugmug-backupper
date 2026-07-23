@@ -131,12 +131,3 @@ func AuthenticatedRequest(method, RequestUrl string) ([]byte, error) {
 	body, _ := io.ReadAll(resp.Body)
 	return body, nil
 }
-func Parse(body []byte, object any) error {
-
-	err := json.Unmarshal(body, object)
-	if err != nil {
-		fmt.Println("error ocurred during unmarshalling of response body: ", err)
-		return err
-	}
-	return nil
-}
