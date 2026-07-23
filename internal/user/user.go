@@ -43,20 +43,6 @@ func GetUser() User {
 func GetRootNode() string {
 	return path.Base(GetUser().Uris.Node.Uri)
 }
-func GetChildNodes(nodeUri string) {
-	nodeRequestUrl := fmt.Sprintf("https://api.smugmug.com/api/v2/node/%s!children", nodeUri)
-	body, err := auth.AuthenticatedRequest("GET", nodeRequestUrl)
-	if err != nil {
-		fmt.Println("error ocurred during request: ", err)
-	}
-	var prettyJSON bytes.Buffer
-	if err := json.Indent(&prettyJSON, body, "", "  "); err != nil {
-		fmt.Println("Invalid JSON:", err)
-		return
-	}
-	fmt.Println(prettyJSON.String())
-
-}
 func GetEverything() {
 	body, err := auth.AuthenticatedRequest("GET", "https://api.smugmug.com/api/v2!authuser")
 	if err != nil {
